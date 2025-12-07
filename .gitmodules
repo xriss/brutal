@@ -1,0 +1,10 @@
+[submodule "subs/binaryen"]
+	path = subs/binaryen
+	url = https://github.com/WebAssembly/binaryen.git
+[submodule "subs/wasm-micro-runtime"]
+	path = subs/wasm-micro-runtime
+	url = https://github.com/bytecodealliance/wasm-micro-runtime.git
+[submodule "subs/lua"]
+	path = subs/lua
+	url = https://github.com/lua/lua.git
+	branch = v5-2
