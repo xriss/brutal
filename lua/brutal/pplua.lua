@@ -1,0 +1,163 @@
+--[[
+
+genericish preprocessor that uses embedded lua (5.3) to handle includes and macros.
+
+]]
+
+local M={ modname=(...) } ; package.loaded[M.modname]=M
+
+-- easy export
+M.export=function(env,...)
+	local tab={...}
+	for i=1,#tab do tab[i]=env[ tab[i] ] end
+	return unpack(tab)
+end
+
+local pplua={} -- pplua meta functions inherited from here
+pplua.__index=pplua -- self index
+M.pplua=pplua -- expose
+
+M.create=function(pp)
+	pp=pp or {}
+	setmetatable(pp,M.pplua)
+
+-- default brackets, chars may be repeated but close must match opening
+-- eg <<[ ]>> or <[[ ]]>  could be used to "escape" the use of ]> within.
+-- must be symbols and if a symbol is used twice it must close with the same character each time
+	pp:set_brackets(pp.brackets or "<[]>")
+	
+	pp.flags=pp.flags or {}
+
+	-- merge default flags
+	local flags={
+		needclose=true,				-- require closing brackets
+		ignoreshebang=true,			-- replace first line with \n if it begins with #!
+	}
+	for n,v in pairs(flags) do
+		if type(pp.flags[n])=="nil" then
+			pp.flags[n]=v
+		end
+	end
+	
+	pp.env={}
+
+	pp.list={}
+
+	return pp
+end
+
+-- set brackets string and cache versions/parts of it
+pplua.set_brackets=function(pp,brackets)
+
+	pp.brackets=brackets
+	
+	pp.brackets_len=math.floor( (#pp.brackets)/2 )
+	pp.brackets_open=pp.brackets:sub(1,pp.brackets_len)
+	pp.brackets_close=pp.brackets:sub(-pp.brackets_len)
+	
+	pp.brackets_open_pat =pp.brackets_open:gsub( ".",function(a) return "%"..a.."+" end )
+	pp.brackets_close_pat=pp.brackets_close:gsub(".",function(a) return "%"..a.."+" end )
+	pp.brackets_map={}
+	for i=1,pp.brackets_len do
+		pp.brackets_map[ pp.brackets_open:sub(i,i) ] = pp.brackets_close:sub(-i,-i)
+	end
+
+	print( pp.brackets_open_pat )
+	print( pp.brackets_close_pat )
+
+end
+
+-- given an open brackets string work out the reversed closing one
+pplua.get_close_brackets=function(pp,bopen)
+	local r=""
+	for i=1,#bopen do
+		r=pp.brackets_map[ bopen:sub(i,i) ]..r
+	end
+	return r
+end
+
+-- split input text into array of "text" and {src="text"} segments using simple brackets
+pplua.split=function(pp,str)
+	local aa={}
+	
+	local idx=1
+	
+	if pp.flags.ignoreshebang then
+		if str:sub(1,2)=="#!" then -- found a https://en.wikipedia.org/wiki/Shebang_(Unix) 
+			local s,e=str:find( "\n" , idx , true ) -- so we will ignore the entire first line
+			if not e then e=#str end -- in case there is only one line with no \n
+			aa[#aa+1]={ "\n" , idx=e+1,  shebang=str:sub(1,e) } -- replace first line with an empty line 
+			idx=e+1
+		end
+	end
+	
+	while idx <= #str do -- scan for brackets
+	
+		local s,e=str:find( pp.brackets_open_pat , idx )
+
+		if s then -- found open so split
+
+			local bopen=str:sub(s,e)
+			local bclose=pp:get_close_brackets(bopen)
+
+			aa[#aa+1]=str:sub(idx,s-1) -- text chunk
+			idx=e+1
+
+			local s,e=str:find( bclose , idx , true ) -- search for close
+			
+			if e then -- found close
+			
+				aa[#aa+1]={ idx=e+1, code=str:sub(idx,s-1), bopen=bopen, bclose=bclose, } -- code chunk
+				idx=e+1
+				
+			else -- close not found so use rest of string or error
+				
+				if pp.flags.needclose then
+					error("missing close brackets "..bclose ) -- TODO: error line etc
+				else
+					e=#str
+					aa[#aa+1]={ idx=e+1, code=str:sub(idx), bopen=bopen } -- final code chunk
+					idx=e+1
+				end
+			end
+
+		else -- open not found advance to end of string
+
+			aa[#aa+1]=str:sub(idx) -- final text chunk
+			idx=#str+1
+
+		end
+	
+	end
+
+print("dump")
+for i,v in ipairs(aa) do print(i,v) end
+
+	return aa
+end
+
+
+pplua.run=function(pp,list)
+
+end
+
+pplua.join=function(pp,list)
+
+end
+
+
+do
+
+local pp=M.create()
+pp.list=pp:split([===[#!
+
+This is a test <<[ __LINE ]>> of how things split.
+
+]===])
+
+pp:run()
+
+print( pp:join() )
+
+
+end
