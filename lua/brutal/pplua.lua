@@ -152,9 +152,6 @@ pplua.set_brackets=function(pp,brackets)
 		pp.brackets_map[ pp.brackets_open:sub(i,i) ] = pp.brackets_close:sub(-i,-i)
 	end
 
-	print( pp.brackets_open_pat )
-	print( pp.brackets_close_pat )
-
 end
 
 -- given an open brackets string work out the reversed closing one
@@ -219,9 +216,6 @@ pplua.split=function(pp,str)
 		end
 	
 	end
-
-print("dump")
-for i,v in ipairs(aa) do print(i,v) end
 
 	return aa
 end
@@ -304,7 +298,7 @@ test=function(a)
 end
 
 ]>
-This is a test <<[ test(_it.idx) , "ok" , false , true   ]>> of how things split.
+This is a test <<[ test(_it.idx) , "ok" , false , true ]>> of how things split.
 
 ]===])
 
