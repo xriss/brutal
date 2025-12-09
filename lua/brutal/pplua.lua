@@ -23,7 +23,7 @@ M.create=function(pp)
 
 -- default brackets, chars may be repeated but close must match opening
 -- eg <<[ ]>> or <[[ ]]>  could be used to "escape" the use of ]> within.
--- must be symbols and if a symbol is used twice it must close with the same character each time
+-- must be symbols and if an open symbol is repeated it must close with the same symbol each time
 	pp:set_brackets(pp.brackets or "<[]>")
 	
 	pp.flags=pp.flags or {}
@@ -39,11 +39,101 @@ M.create=function(pp)
 		end
 	end
 	
-	pp.env={}
+	pp.env=pp:get_env()
 
 	pp.list={}
 
 	return pp
+end
+
+-- set brackets string and cache versions/parts of it
+pplua.get_env=function(pp)
+
+local env={
+	assert=assert,
+	error=error,
+	ipairs=ipairs,
+	pairs=pairs,
+	next=next,
+	pcall=pcall,
+	select=select,
+	tonumber=tonumber,
+	tostring=tostring,
+	type=type,
+	unpack=unpack,
+	xpcall=xpcall,
+	_VERSION=_VERSION,
+	coroutine={
+		create=coroutine and coroutine.create,
+		resume=coroutine and coroutine.resume,
+		running=coroutine and coroutine.running,
+		status=coroutine and coroutine.status,
+		wrap=coroutine and coroutine.wrap,
+		yield=coroutine and coroutine.yield,
+	},
+	table={
+		concat=table and table.concat,
+		insert=table and table.insert,
+		maxn=table and table.maxn,
+		remove=table and table.remove,
+		sort=table and table.sort,
+	},
+	string={
+		byte=string and string.byte,
+		char=string and string.char,
+		find=string and string.find,
+		format=string and string.format,
+		gmatch=string and string.gmatch,
+		gsub=string and string.gsub,
+		len=string and string.len,
+		lower=string and string.lower,
+		match=string and string.match,
+		rep=string and string.rep,
+		reverse=string and string.reverse,
+		sub=string and string.sub,
+		upper=string and string.upper,
+	},
+	math={
+		abs=math and math.abs,
+		acos=math and math.acos,
+		asin=math and math.asin,
+		atan=math and math.atan,
+		atan2=math and math.atan2,
+		ceil=math and math.ceil,
+		cos=math and math.cos,
+		cosh=math and math.cosh,
+		deg=math and math.deg,
+		exp=math and math.exp,
+		floor=math and math.floor,
+		fmod=math and math.fmod,
+		frexp=math and math.frexp,
+		huge=math and math.huge,
+		ldexp=math and math.ldexp,
+		log=math and math.log,
+		log10=math and math.log10,
+		max=math and math.max,
+		min=math and math.min,
+		modf=math and math.modf,
+		pi=math and math.pi,
+		pow=math and math.pow,
+		rad=math and math.rad,
+		random=math and math.random, -- should replace with sandboxed versions
+		randomseed=math and math.randomseed, -- should replace with sandboxed versions
+		sin=math and math.sin,
+		sinh=math and math.sinh,
+		sqrt=math and math.sqrt,
+		tan=math and math.tan,
+		tanh=math and math.tanh,
+	},
+	os={
+		clock=os and os.clock,
+		date=os and os.date, -- this can go boom in some situations?
+		difftime=os and os.difftime,
+		time=os and os.time,
+	},
+}
+	
+	return env
 end
 
 -- set brackets string and cache versions/parts of it
@@ -76,7 +166,7 @@ pplua.get_close_brackets=function(pp,bopen)
 	return r
 end
 
--- split input text into array of "text" and {src="text"} segments using simple brackets
+-- split input text into array of "text" and {code="text"} segments using simple brackets
 pplua.split=function(pp,str)
 	local aa={}
 	
@@ -137,21 +227,84 @@ for i,v in ipairs(aa) do print(i,v) end
 end
 
 
-pplua.run=function(pp,list)
+pplua.join=function(pp,list)
+
+	local out={}
+
+	list=list or pp.list
+	
+	for i,v in ipairs(list) do -- concat all array slots
+	
+		if type(v)=="table" then -- sub table
+			out[#out+1]=pp:join(v)
+		elseif v then -- ignore false which can be used for place holders
+			out[#out+1]=tostring(v)
+		end
+
+	end
+	
+	return table.concat(out,"")
 
 end
 
-pplua.join=function(pp,list)
+pplua.run=function(pp,list)
 
+	list=list or pp.list
+
+	for i,v in ipairs(list) do -- run all array slots	
+		if type(v)=="table" then
+			if v.code then -- we have some code to run
+				pp:run_lua(v)			
+			end
+			pp:run(v) -- run may have generated some sub code eg by require so iterate output
+		end
+	end
+
+end
+
+pplua.run_lua=function(pp,it)
+
+	-- remove output before we run
+	for i=#it,1,-1 do
+		it[i]=nil --remove
+	end
+
+	local f,err
+	
+	f,err=load("local _pp,_it=...;return\n"..it.code,"pp","t",pp.env) -- try with return prefix for simple variable insertion
+	if not f then
+		f,err=load("local _pp,_it=...;\n"..it.code,"pp","t",pp.env) -- if that failed then try without return prefix
+	end
+	if not f then
+		error(err) -- TODO: better error line etc
+	end
+	
+	local r={ f(pp,it) } -- run the lua code inside pp.env and capture all output
+	-- the function may have inserted some values so append any return values
+	for i,v in ipairs(r) do
+		if v then -- must be true
+			it[#it+1]=v
+		end
+	end
+	
 end
 
 
 do
 
 local pp=M.create()
-pp.list=pp:split([===[#!
+pp.list=pp:split([===[#! ignore me
+<[
 
-This is a test <<[ __LINE ]>> of how things split.
+-- simple test macro, must be global
+test=function(a)
+
+	return a*111
+
+end
+
+]>
+This is a test <<[ test(_it.idx) , "ok" , false , true   ]>> of how things split.
 
 ]===])
 
