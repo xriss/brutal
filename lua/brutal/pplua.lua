@@ -84,8 +84,21 @@ M.create=function(pp)
 	pp.env=pp:get_env()
 
 	pp.list={}
+	
+	pp.chunkidx=1
 
 	return pp
+end
+
+-- so we can fill a ppchunk up with current parse info etc
+pplua.create_chunk=function(pp,ppchunk)
+	
+	ppchunk=ppchunk or {}
+	
+	ppchunk.idx=pp.chunkidx
+	pp.chunkidx=pp.chunkidx+1
+
+	return ppchunk
 end
 
 -- set brackets string and cache versions/parts of it
@@ -205,7 +218,7 @@ pplua.get_close_brackets=function(pp,bopen)
 	return r
 end
 
--- split input text into array of "text" and {code="text"} segments using simple brackets
+-- split input text into array of "text" and {code="text"} chunks separated using simple brackets
 pplua.split=function(pp,str)
 	local aa={}
 	
@@ -215,7 +228,7 @@ pplua.split=function(pp,str)
 		if str:sub(1,2)=="#!" then -- found a https://en.wikipedia.org/wiki/Shebang_(Unix) 
 			local s,e=str:find( "\n" , idx , true ) -- so we will ignore the entire first line
 			if not e then e=#str end -- in case there is only one line with no \n
-			aa[#aa+1]={ "\n" , idx=e+1,  shebang=str:sub(1,e) } -- replace first line with an empty line 
+			aa[#aa+1]=pp:create_chunk({ "\n" , shebang=str:sub(1,e) }) -- replace first line with an empty line 
 			idx=e+1
 		end
 	end
@@ -236,7 +249,7 @@ pplua.split=function(pp,str)
 			
 			if e then -- found close
 			
-				aa[#aa+1]={ idx=e+1, code=str:sub(idx,s-1), bopen=bopen, bclose=bclose, } -- code chunk
+				aa[#aa+1]=pp:create_chunk({ code=str:sub(idx,s-1), bopen=bopen, bclose=bclose, }) -- code chunk
 				idx=e+1
 				
 			else -- close not found so use rest of string or error
@@ -245,7 +258,7 @@ pplua.split=function(pp,str)
 					error("missing close brackets "..bclose ) -- TODO: error line etc
 				else
 					e=#str
-					aa[#aa+1]={ idx=e+1, code=str:sub(idx), bopen=bopen } -- final code chunk
+					aa[#aa+1]=pp:create_chunk({ code=str:sub(idx), bopen=bopen }) -- final code chunk
 					idx=e+1
 				end
 			end
@@ -262,9 +275,10 @@ pplua.split=function(pp,str)
 	return aa
 end
 
-
+-- join processed chunks back together
 pplua.join=function(pp,list)
 
+	local map={} -- todo generate source map
 	local out={}
 
 	list=list or pp.list
@@ -279,10 +293,11 @@ pplua.join=function(pp,list)
 
 	end
 	
-	return table.concat(out,"")
+	return table.concat(out,""),map
 
 end
 
+-- process chunks
 pplua.run=function(pp,list)
 
 	list=list or pp.list
@@ -298,6 +313,7 @@ pplua.run=function(pp,list)
 
 end
 
+-- process a chunk as lua
 pplua.run_lua=function(pp,it)
 
 	-- remove output before we run
@@ -307,9 +323,10 @@ pplua.run_lua=function(pp,it)
 
 	local f,err
 	
-	f,err=load("local _pp,_it=...;return\n"..it.code,"pp","t",pp.env) -- try with return prefix for simple variable insertion
+	local ppvars="local pp,ppchunk=...;"
+	f,err=load(ppvars.."return\n"..it.code,"ppchunk"..(it.idx),"t",pp.env) -- try with return prefix for simple variable insertion
 	if not f then
-		f,err=load("local _pp,_it=...;\n"..it.code,"pp","t",pp.env) -- if that failed then try without return prefix
+		f,err=load(ppvars.."\n"..it.code,"ppchunk"..(it.idx),"t",pp.env) -- if that failed then try without return prefix
 	end
 	if not f then
 		error(err) -- TODO: better error line etc
@@ -341,13 +358,13 @@ test=function(a)
 end
 
 ]>
-This is a test <<[ test(_it.idx) , " ok " , false , true ]>> of how things split.
+This is a test <<[ test(ppchunk.idx) , " ok " , false , true ]>> of how things split.
 
 ]===])
 
 pp:run()
 
-print( pp:join() )
+print( (pp:join()) )
 
 
 end

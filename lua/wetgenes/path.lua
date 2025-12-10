@@ -14,7 +14,7 @@ Manage file paths under linux or windows, so we need to deal with \ or
 ]]
 local M={} ; package.loaded[(...)]=M ; local wpath=M
 
--- a soft require of lfs so lfs can be nil
+-- a soft require of lfs_ffi or lfs so lfs can be nil
 local lfs
 do
 	for i,v in ipairs{
