@@ -4,6 +4,8 @@ genericish preprocessor that uses embedded lua (5.3) to handle includes and macr
 
 ]]
 
+local wpath=require("wetgenes.path") -- this will use lfs_any so overload that for a custom filesystem
+
 local M={ modname=(...) } ; package.loaded[M.modname]=M
 
 -- easy export
@@ -16,6 +18,43 @@ end
 local pplua={} -- pplua meta functions inherited from here
 pplua.__index=pplua -- self index
 M.pplua=pplua -- expose
+
+-- keep this function out of the parse code for sanity/security so it cannot change the search paths.
+local get_load_file=function(pp,_paths)
+
+	local paths={}
+	
+	for i,v in ipairs(_paths) do 
+		paths[i]=wpath.resolve(v)
+	end
+
+	local valid_path=function(p)
+		for i,path in ipairs(paths) do
+			-- must begin with one of these paths
+ 			if p:sub(1,#path)==path then return true end
+		end
+		return false -- out of scope
+	end
+
+	local load_file=function(pp,filename)
+
+		for i,path in ipairs(paths) do 
+			local p=wpath.resolve(path,filename) -- filename can contain .. etc
+			if valid_path(p) then -- but must stay within valid registered search paths
+				local fp=io.open(p,"rb")
+				if fp then
+					local data=fp:read("*all")
+					fp:close()
+					return p,data
+				end
+			end
+		end
+
+		return nil,nil -- fail
+	end
+
+	return load_file
+end
 
 M.create=function(pp)
 	pp=pp or {}
@@ -38,6 +77,9 @@ M.create=function(pp)
 			pp.flags[n]=v
 		end
 	end
+	
+	pp.search=pp.search or {"."} -- search paths, note this can not be changed while parsing
+	pp.load_file=get_load_file(pp,pp.search)
 	
 	pp.env=pp:get_env()
 
@@ -63,73 +105,73 @@ local env={
 	unpack=unpack,
 	xpcall=xpcall,
 	_VERSION=_VERSION,
-	coroutine={
-		create=coroutine and coroutine.create,
-		resume=coroutine and coroutine.resume,
-		running=coroutine and coroutine.running,
-		status=coroutine and coroutine.status,
-		wrap=coroutine and coroutine.wrap,
-		yield=coroutine and coroutine.yield,
+	coroutine=coroutine and {
+		create=coroutine.create,
+		resume=coroutine.resume,
+		running=coroutine.running,
+		status=coroutine.status,
+		wrap=coroutine.wrap,
+		yield=coroutine.yield,
 	},
-	table={
-		concat=table and table.concat,
-		insert=table and table.insert,
-		maxn=table and table.maxn,
-		remove=table and table.remove,
-		sort=table and table.sort,
+	table=table and {
+		concat=table.concat,
+		insert=table.insert,
+		maxn=table.maxn,
+		remove=table.remove,
+		sort=table.sort,
 	},
-	string={
-		byte=string and string.byte,
-		char=string and string.char,
-		find=string and string.find,
-		format=string and string.format,
-		gmatch=string and string.gmatch,
-		gsub=string and string.gsub,
-		len=string and string.len,
-		lower=string and string.lower,
-		match=string and string.match,
-		rep=string and string.rep,
-		reverse=string and string.reverse,
-		sub=string and string.sub,
-		upper=string and string.upper,
+	string=string and {
+		byte=string.byte,
+		char=string.char,
+		find=string.find,
+		format=string.format,
+		gmatch=string.gmatch,
+		gsub=string.gsub,
+		len=string.len,
+		lower=string.lower,
+		match=string.match,
+		rep=string.rep,
+		reverse=string.reverse,
+		sub=string.sub,
+		upper=string.upper,
 	},
-	math={
-		abs=math and math.abs,
-		acos=math and math.acos,
-		asin=math and math.asin,
-		atan=math and math.atan,
-		atan2=math and math.atan2,
-		ceil=math and math.ceil,
-		cos=math and math.cos,
-		cosh=math and math.cosh,
-		deg=math and math.deg,
-		exp=math and math.exp,
-		floor=math and math.floor,
-		fmod=math and math.fmod,
-		frexp=math and math.frexp,
-		huge=math and math.huge,
-		ldexp=math and math.ldexp,
-		log=math and math.log,
-		log10=math and math.log10,
-		max=math and math.max,
-		min=math and math.min,
-		modf=math and math.modf,
-		pi=math and math.pi,
-		pow=math and math.pow,
-		rad=math and math.rad,
-		random=math and math.random, -- should replace with sandboxed versions
-		randomseed=math and math.randomseed, -- should replace with sandboxed versions
-		sin=math and math.sin,
-		sinh=math and math.sinh,
-		sqrt=math and math.sqrt,
-		tan=math and math.tan,
-		tanh=math and math.tanh,
+	math=math and {
+		abs=math.abs,
+		acos=math.acos,
+		asin=math.asin,
+		atan=math.atan,
+		atan2=math.atan2,
+		ceil=math.ceil,
+		cos=math.cos,
+		cosh=math.cosh,
+		deg=math.deg,
+		exp=math.exp,
+		floor=math.floor,
+		fmod=math.fmod,
+		frexp=math.frexp,
+		huge=math.huge,
+		ldexp=math.ldexp,
+		log=math.log,
+		log10=math.log10,
+		max=math.max,
+		min=math.min,
+		modf=math.modf,
+		pi=math.pi,
+		pow=math.pow,
+		rad=math.rad,
+		random=math.random, -- should replace with sandboxed versions
+		randomseed=math.randomseed, -- should replace with sandboxed versions
+		sin=math.sin,
+		sinh=math.sinh,
+		sqrt=math.sqrt,
+		tan=math.tan,
+		tanh=math.tanh,
 	},
-	os={
-		clock=os and os.clock,
-		date=os and os.date, -- this can go boom in some situations?
-		difftime=os and os.difftime,
-		time=os and os.time,
+	os=os and {
+		clock=os.clock,
+		date=os.date, -- this can go boom in some situations?
+		difftime=os.difftime,
+		time=os.time,
 	},
 }
 	
@@ -286,7 +328,8 @@ end
 
 do
 
-local pp=M.create()
+local pp=M.create({})
+
 pp.list=pp:split([===[#! ignore me
 <[
 
@@ -298,7 +341,7 @@ test=function(a)
 end
 
 ]>
-This is a test <<[ test(_it.idx) , "ok" , false , true ]>> of how things split.
+This is a test <<[ test(_it.idx) , " ok " , false , true ]>> of how things split.
 
 ]===])
 
