@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+BASE=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+
+export LUA_PATH="${BASE}/lua/?.lua;;"
+
+# use luajit until we build our own lua
+
+luajit -- "$BASE/lua/brutal/cmd.lua" "$@"

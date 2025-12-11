@@ -1,0 +1,12 @@
+#! ignore me
+<[
+
+-- simple test macro, must be global
+test=function(a)
+
+	return a*111
+
+end
+
+]>
+This is a test <<[ test(ppchunk.idx) , " ok " , false , true ]>> of how things split.

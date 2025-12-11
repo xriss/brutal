@@ -19,33 +19,42 @@ local pplua={} -- pplua meta functions inherited from here
 pplua.__index=pplua -- self index
 M.pplua=pplua -- expose
 
--- keep this function out of the parse code for sanity/security so it cannot change the search paths.
+-- keep this function out of the parse code for sanity/security so chunk code cannot change the search paths.
 local get_load_file=function(pp,_paths)
 
-	local paths={}
+	local loaded={}
+	local paths={false} -- reserve first slot for current files directory
 	
 	for i,v in ipairs(_paths) do 
-		paths[i]=wpath.resolve(v)
+		paths[#paths+1]=wpath.resolve(v)
 	end
 
 	local valid_path=function(p)
 		for i,path in ipairs(paths) do
-			-- must begin with one of these paths
- 			if p:sub(1,#path)==path then return true end
+			if path then
+				-- must begin with one of these paths
+				if p:sub(1,#path)==path then return true end
+			end
 		end
 		return false -- out of scope
 	end
 
 	local load_file=function(pp,filename)
 
-		for i,path in ipairs(paths) do 
-			local p=wpath.resolve(path,filename) -- filename can contain .. etc
-			if valid_path(p) then -- but must stay within valid registered search paths
-				local fp=io.open(p,"rb")
-				if fp then
-					local data=fp:read("*all")
-					fp:close()
-					return p,data
+		for i,path in ipairs(paths) do
+			if path then
+				local p=wpath.resolve(path,filename) -- filename can contain .. etc
+				if valid_path(p) then -- but must stay within valid registered search paths
+					if loaded[p] then -- cache
+						return p,loaded[p]
+					else
+						local fp=io.open(p,"rb")
+						if fp then
+							local data=fp:read("*all")
+							fp:close()
+							return p,data
+						end
+					end
 				end
 			end
 		end
@@ -56,6 +65,7 @@ local get_load_file=function(pp,_paths)
 	return load_file
 end
 
+-- create must provide search paths this can not be changed later
 M.create=function(pp)
 	pp=pp or {}
 	setmetatable(pp,M.pplua)
@@ -78,27 +88,28 @@ M.create=function(pp)
 		end
 	end
 	
-	pp.search=pp.search or {"."} -- search paths, note this can not be changed while parsing
+	pp.search=pp.search or {"."} -- search paths, note this can not be changed while parsing and must be given here
 	pp.load_file=get_load_file(pp,pp.search)
+	pp.required={} -- map of previously required files
 	
 	pp.env=pp:get_env()
 
-	pp.list={}
+	pp.root=nil
 	
 	pp.chunkidx=1
 
 	return pp
 end
 
--- so we can fill a ppchunk up with current parse info etc
-pplua.create_chunk=function(pp,ppchunk)
+-- so we can fill a chunk up with current parse info etc
+pplua.create_chunk=function(pp,chunk)
 	
-	ppchunk=ppchunk or {}
+	chunk=chunk or {}
 	
-	ppchunk.idx=pp.chunkidx
+	chunk.idx=pp.chunkidx
 	pp.chunkidx=pp.chunkidx+1
 
-	return ppchunk
+	return chunk
 end
 
 -- set brackets string and cache versions/parts of it
@@ -187,7 +198,6 @@ local env={
 		time=os.time,
 	},
 }
-	
 	return env
 end
 
@@ -220,7 +230,9 @@ end
 
 -- split input text into array of "text" and {code="text"} chunks separated using simple brackets
 pplua.split=function(pp,str)
-	local aa={}
+
+	local chunk=pp:create_chunk()
+	local push=function(v) chunk[#chunk+1]=v end
 	
 	local idx=1
 	
@@ -228,7 +240,7 @@ pplua.split=function(pp,str)
 		if str:sub(1,2)=="#!" then -- found a https://en.wikipedia.org/wiki/Shebang_(Unix) 
 			local s,e=str:find( "\n" , idx , true ) -- so we will ignore the entire first line
 			if not e then e=#str end -- in case there is only one line with no \n
-			aa[#aa+1]=pp:create_chunk({ "\n" , shebang=str:sub(1,e) }) -- replace first line with an empty line 
+			push(pp:create_chunk({ "\n" , shebang=str:sub(1,e) })) -- replace first line with an empty line 
 			idx=e+1
 		end
 	end
@@ -242,14 +254,14 @@ pplua.split=function(pp,str)
 			local bopen=str:sub(s,e)
 			local bclose=pp:get_close_brackets(bopen)
 
-			aa[#aa+1]=str:sub(idx,s-1) -- text chunk
+			push(str:sub(idx,s-1)) -- text chunk
 			idx=e+1
 
 			local s,e=str:find( bclose , idx , true ) -- search for close
 			
 			if e then -- found close
 			
-				aa[#aa+1]=pp:create_chunk({ code=str:sub(idx,s-1), bopen=bopen, bclose=bclose, }) -- code chunk
+				push(pp:create_chunk({ code=str:sub(idx,s-1), bopen=bopen, bclose=bclose, })) -- code chunk
 				idx=e+1
 				
 			else -- close not found so use rest of string or error
@@ -258,32 +270,30 @@ pplua.split=function(pp,str)
 					error("missing close brackets "..bclose ) -- TODO: error line etc
 				else
 					e=#str
-					aa[#aa+1]=pp:create_chunk({ code=str:sub(idx), bopen=bopen }) -- final code chunk
+					push(pp:create_chunk({ code=str:sub(idx), bopen=bopen })) -- final code chunk
 					idx=e+1
 				end
 			end
 
 		else -- open not found advance to end of string
 
-			aa[#aa+1]=str:sub(idx) -- final text chunk
+			push(str:sub(idx)) -- final text chunk
 			idx=#str+1
 
 		end
 	
 	end
 
-	return aa
+	return chunk
 end
 
 -- join processed chunks back together
-pplua.join=function(pp,list)
+pplua.join=function(pp,chunk)
 
 	local map={} -- todo generate source map
 	local out={}
-
-	list=list or pp.list
 	
-	for i,v in ipairs(list) do -- concat all array slots
+	for i,v in ipairs(chunk) do -- concat all array slots
 	
 		if type(v)=="table" then -- sub table
 			out[#out+1]=pp:join(v)
@@ -298,11 +308,9 @@ pplua.join=function(pp,list)
 end
 
 -- process chunks
-pplua.run=function(pp,list)
+pplua.run=function(pp,chunk)
 
-	list=list or pp.list
-
-	for i,v in ipairs(list) do -- run all array slots	
+	for i,v in ipairs(chunk) do -- run all array slots	
 		if type(v)=="table" then
 			if v.code then -- we have some code to run
 				pp:run_lua(v)			
@@ -313,58 +321,68 @@ pplua.run=function(pp,list)
 
 end
 
+-- exposed locals available at parse time, pp and ppchunk are passed in via ...
+local ppvars="local pp,ppchunk=...;"..
+"local ppinclude=function(name) return pp:include(ppchunk,name) end;"..
+"local pprequire=function(name) return pp:require(ppchunk,name) end;"..
+"local ppinsert =function(text) return pp:insert(ppchunk,text)  end;"..
+"local pptext   =function(text) return pp:out(ppchunk,text)     end;"
+-- these are all on one line so we only add one line to the chunk code
+
 -- process a chunk as lua
-pplua.run_lua=function(pp,it)
+pplua.run_lua=function(pp,chunk)
 
 	-- remove output before we run
-	for i=#it,1,-1 do
-		it[i]=nil --remove
+	for i=#chunk,1,-1 do
+		chunk[i]=nil --remove
 	end
 
 	local f,err
 	
-	local ppvars="local pp,ppchunk=...;"
-	f,err=load(ppvars.."return\n"..it.code,"ppchunk"..(it.idx),"t",pp.env) -- try with return prefix for simple variable insertion
+	f,err=load(ppvars.."return\n"..chunk.code,"ppchunk"..(chunk.idx),"t",pp.env) -- try with return prefix for simple variable insertion
 	if not f then
-		f,err=load(ppvars.."\n"..it.code,"ppchunk"..(it.idx),"t",pp.env) -- if that failed then try without return prefix
+		f,err=load(ppvars.."\n"..chunk.code,"ppchunk"..(chunk.idx),"t",pp.env) -- if that failed then try without return prefix
 	end
 	if not f then
 		error(err) -- TODO: better error line etc
 	end
 	
-	local r={ f(pp,it) } -- run the lua code inside pp.env and capture all output
+	local r={ f(pp,chunk) } -- run the lua code inside pp.env and capture all output
 	-- the function may have inserted some values so append any return values
 	for i,v in ipairs(r) do
 		if v then -- must be true
-			it[#it+1]=v
+			chunk[#chunk+1]=v
 		end
 	end
 	
 end
 
 
-do
-
-local pp=M.create({})
-
-pp.list=pp:split([===[#! ignore me
-<[
-
--- simple test macro, must be global
-test=function(a)
-
-	return a*111
-
+-- include a file into this chunk
+pplua.include=function(pp,chunk,name)
+	local path,text=pp:load_file(name)
+	if not path then error("include file not found "..name) end
+	pp:insert(chunk,text)
 end
 
-]>
-This is a test <<[ test(ppchunk.idx) , " ok " , false , true ]>> of how things split.
+-- include a file into this chunk once
+-- so only include if not required before ( may have been included before )
+pplua.require=function(pp,chunk,name)
+	local path,text=pp:load_file(name)
+	if not path then error("require file not found "..name) end
+	if not pp.required[path] then -- first time
+		pp.required[path]=text -- remember
+		pp:insert(chunk,text)
+	end
+	-- do nothing if already required
+end
 
-]===])
+-- include split text in chunk output ( so it may contain more bracketed values )
+pplua.insert=function(pp,chunk,text)
+	chunk[#chunk+1]=pp:split(text)
+end
 
-pp:run()
-
-print( (pp:join()) )
-
-
+-- include text in chunk output as an alternative to a chunk returning values
+pplua.out=function(pp,chunk,text)
+	chunk[#chunk+1]=text
 end
