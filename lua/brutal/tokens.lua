@@ -23,7 +23,7 @@ tokens.next_token=function(code,idx)
 	local c=code:sub(idx,idx) -- first char, this will decide the type
 	if c==" " or c=="\t" or c=="\n" or c=="\r" then -- white space
 
-		local fs,fe=code:find("^%s+",idx) -- clump all whitespace together
+		local fs,fe=code:find("^[ \t\n\r]+",idx) -- clump all whitespace together
 		return 1+fe-idx
 		
 	elseif c=="\"" or c=="'" then -- simple " or ' string with possible \ escapes
@@ -53,9 +53,9 @@ tokens.next_token=function(code,idx)
 		local fs,fe = code:find(quote,look+#quote,true) -- string may contain anything ( even \0 ) *except* the quote
 		return 1+(fe or length)-idx
 
-	elseif c:find("[%w_]",1) then -- letter digit or _ 
+	elseif c:find("[a-zA-Z0-9_]",1) then -- letter digit or _ 
 
-		local fs,fe = code:find("^[%w_]+",idx) -- clump all letters and digits and _ together
+		local fs,fe = code:find("^[a-zA-Z0-9_]+",idx) -- clump all letters and digits and _ together
 		return 1+fe-idx
 
 	else
