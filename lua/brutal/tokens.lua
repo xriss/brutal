@@ -86,7 +86,7 @@ tokens.next_token=function(code,idx)
 	return 1
 end
 
-
+-- build array of strings for testing
 tokens.code_to_strings=function(code)
 	local strings={}
 	
