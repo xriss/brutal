@@ -10,3 +10,7 @@ end
 
 ]>
 This is a test <<[ test(ppchunk.idx) , " ok " , false , true ]>> of how things split.
+
+Test operator clumping 
+!~@#$%^&*+-=|<>?/,.()_{}[]:;\
+

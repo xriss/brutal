@@ -19,7 +19,7 @@ end
 tokens.next_token=function(code,idx)
 	local length=#code
 	if idx>length then return end
-
+	
 	local c=code:sub(idx,idx) -- first char, this will decide the type
 	if c==" " or c=="\t" or c=="\n" or c=="\r" then -- white space
 
@@ -80,8 +80,18 @@ tokens.next_token=function(code,idx)
 
 	end
 
-	-- everything else is a single character symbol or control code
-	-- we can join them together later for operators like ++ -- etc etc
+	-- everything else is probably an operator so check for operator clumps
+	-- note that brackets {} [] () and quotes ` ' " and . , : ; \ do not clump
+	-- white space or brackets *MUST* be used around clumping operators to prevent operator clumping
+	-- this is mostly a problem for negative numbers
+	-- EG to subtract a negative one it must be ( a- -1 ) or ( a-(-1) ) not ( a--1 )
+	-- EG to assign a negative number it must be ( a= -1 ) or ( a=(-1)) not ( a=-1 )
+	-- EG to raise number to a negative power it must be ( a^ -1 ) or ( a^(-1)) ) not ( a^-1 )
+
+	local fs,fe = code:find("^[%~!@#%$%%%^&%*%+%-=|<>%?/]+",idx) -- note the % escapes of magic chars
+	if fe then -- found a clump
+		return 1+fe-idx
+	end
 
 	return 1
 end
