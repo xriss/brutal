@@ -14,3 +14,28 @@ This is a test <<[ test(ppchunk.idx) , " ok " , false , true ]>> of how things s
 Test operator clumping 
 !~@#$%^&*+-=|<>?/,.()_{}[]:;\
 
+
+Numbers
+
+012345678902
+
+2345645456
+
+12.456
+
+12.456e10
+12.e10
+.23e10
+
+.234123462346
+
+-.342452346
+
+123e45
+
+123e-45
+
+0x01a0ffff
+
+0b01011111
+

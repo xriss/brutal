@@ -25,7 +25,47 @@ tokens.next_token=function(code,idx)
 
 		local fs,fe=code:find("^[ \t\n\r]+",idx) -- clump all whitespace together
 		return 1+fe-idx
+
+	elseif c=="0" or c=="1" or c=="2" or c=="3" or c=="4" or c=="5" or c=="6" or c=="7" or c=="8" or c=="9" or c=="." then -- number
+	
+		-- no leading 0 octal 
 		
+		local cc=code:sub(idx,idx+1)
+		
+		if cc=="0x" or cc=="0X" then -- hex start
+
+			local fs,fe = code:find("^[0-9a-fA-F]+",idx+2)
+			if fe then
+				return 1+fe-idx
+			end
+		
+		elseif cc=="0b" or cc=="0B" then -- binary start
+		
+			local fs,fe = code:find("^[01]+",idx+2)
+			if fe then
+				return 1+fe-idx
+			end
+
+		end
+
+		-- we need two patterns dealing with optional digits either side of decimal point
+		-- we only allow 1 to 3 digits for exponent
+
+		-- float with e number
+		local fs,fe = code:find("^[0-9]*%.?[0-9]+[eE][%-]?[0-9][0-9]?[0-9]?",idx)	-- digits required after .
+		if fe then return 1+fe-idx end
+		local fs,fe = code:find("^[0-9]+%.?[0-9]*[eE][%-]?[0-9][0-9]?[0-9]?",idx)	-- digits required before .
+		if fe then return 1+fe-idx end
+
+		-- decimal or float without e number 
+		local fs,fe = code:find("^[0-9]*%.?[0-9]+",idx)	-- digits required after .
+		if fe then return 1+fe-idx end
+		local fs,fe = code:find("^[0-9]+%.?[0-9]*",idx)	-- digits required before .
+		if fe then return 1+fe-idx end
+		
+		-- it was just a . any number should have been caught above
+		return 1
+
 	elseif c=="\"" or c=="'" then -- simple " or ' string with possible \ escapes
 
 		local quote=c
@@ -53,7 +93,7 @@ tokens.next_token=function(code,idx)
 		local fs,fe = code:find(quote,look+#quote,true) -- string may contain anything ( even \0 ) *except* the quote
 		return 1+(fe or length)-idx
 
-	elseif c:find("[a-zA-Z0-9_]",1) then -- letter digit or _ 
+	elseif c:find("^[a-zA-Z0-9_]",1) then -- letter digit or _ 
 
 		local fs,fe = code:find("^[a-zA-Z0-9_]+",idx) -- clump all letters and digits and _ together
 		return 1+fe-idx
