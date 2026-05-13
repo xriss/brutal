@@ -4,6 +4,78 @@ First we must break a string into a table of brutal tokens
 
 ]]
 
+-- start with C ish , might need to junk some of these
+-- ideally most of this should just be left to right...
+-- honestly I have never *trusted* this magical list...
+local symbol_precedences={
+	{
+		"++",
+		"--",
+		".",
+		"->",
+	},
+	{
+		"+",
+		"-",
+		"!",
+		"&",
+	},
+	{
+		"*",
+		"/",
+		"%",
+	},
+	{
+		"+",
+		"-",
+	},
+	{
+		"<<",
+		">>",
+	},
+	{
+		"<",
+		"<=",
+		">",
+		">=",
+		"==",
+		"!=",
+	},
+	{
+		"&",
+		"^",
+		"|",
+	},
+	{
+		"&&",
+		"^^",
+		"||",
+	},
+	{
+		"=",
+		"+=",
+		"-=",
+		"*=",
+		"/=",
+		"%=",
+		"<<=",
+		">>=",
+		"&=",
+		"^=",
+		"|=",
+	},
+	{
+		",",
+	},
+}
+local symbol_precedences_lookup={}
+for level,list in ipairs(symbol_precedences) do
+	for _,symbol in ipairs(list) do
+		symbol_precedences_lookup[symbol]=leven
+	end
+end
+
+
 local M={ modname=(...) } ; package.loaded[M.modname]=M
 local trees=M
 
@@ -25,12 +97,15 @@ end
 
 trees.nodes.new = function(parent)
 	local node=trees.nodes.alloc()
-	node.parent=parent
 	node.tree=parent and parent.tree
-	if parent then -- link child in array part of node
+	return node
+end
+
+trees.nodes.append = function(node,parent)
+	node.parent=parent
+	if parent then -- link child in array part of parent node
 		parent[#parent+1]=node
 	end
-	return node
 end
 
 trees.nodes.bug = function(node,bug,context)
@@ -43,6 +118,13 @@ trees.nodes.dump = function(node,indent)
 	for i,v in ipairs(node) do
 		v:dump(indent.." ")
 	end
+end
+
+trees.nodes.precedence = function(node)
+	if node.is=="symbol" then
+		return symbol_precedences_lookup[ node.symbol ] or 0
+	end
+	return 0
 end
 
 trees.nodes.parse_token = function(node,token)
@@ -62,13 +144,13 @@ trees.nodes.parse_token = function(node,token)
 		if text:find("\n") then
 			node.space="line"
 		end
-	elseif c=="0" or c=="1" or c=="2" or c=="3" or c=="4" or c=="5" or c=="6" or c=="7" or c=="8" or c=="9" or ( c=="." and text~="." ) then
+	elseif c=="0" or c=="1" or c=="2" or c=="3" or c=="4" or c=="5" or c=="6" or c=="7" or c=="8" or c=="9" then
 		node.is="number"
 		node.text=text
 		node.number=tonumber(text) -- todo: better number parser
 	elseif cc=="//" or cc=="/*" then
-		node.is="comment"
-		node.text=text
+		node.is="space"
+		node.space="comment"
 	elseif text=="(" or text=="{" or text=="[" then
 		node.is="open"
 		node.open=text
@@ -93,24 +175,48 @@ trees.parse = function( code , tokens )
 	tree.tokens=tokens
 	
 	local stack={}
-	local push=function(node) stack[#stack+1]=node end
 	local pull=function() local node=stack[#stack] ; stack[#stack]=nil ; return node end
 	local peek=function() return stack[#stack] end
+	local push=function(node)
+		local parent=peek()
+		node:append(parent)
+		stack[#stack+1]=node
+	end
+	local append=function(node)
+		local parent=peek()
+		node:append(parent)
+	end
 	
 	push(tree)
 	
 	for idx=1,#tokens-1 do -- step through tokens
-		local node=trees.nodes.new( peek() )
+		local node=trees.nodes.new(tree)
 		node:parse_token(idx)
 		if node.is=="open" then
 			push(node)
-		end
-		if node.is=="close" then
+		elseif node.is=="close" then
 			local t=pull()
-			if t.is~="open" then return t:bug("brackets",node) end
-			if t.open=="(" and node.close~=")" then return t:bug("(brackets)",node) end
-			if t.open=="{" and node.close~="}" then return t:bug("{brackets}",node) end
-			if t.open=="[" and node.close~="]" then return t:bug("[brackets]",node) end
+			while t do
+				if t.is=="open" then -- try match
+					if t.open=="(" and node.close~=")" then return t:bug("(brackets)",node) end
+					if t.open=="{" and node.close~="}" then return t:bug("{brackets}",node) end
+					if t.open=="[" and node.close~="]" then return t:bug("[brackets]",node) end
+					break
+				end
+				t=pull()
+			end
+			if not t then t:bug("brackets",node) end
+			append(node)
+		elseif node.is=="symbol" then
+			local level=node:precedence()
+			local test=peek():precedence()
+			if level>test then
+				push(node)
+			else
+				append(node)
+			end
+		else
+			append(node)
 		end
 	end
 
