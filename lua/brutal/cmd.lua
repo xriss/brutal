@@ -1,6 +1,7 @@
 
 local pplua=require("brutal.pplua")
-local tokens=require("brutal.tokens")
+local brutal_tokens=require("brutal.tokens")
+local brutal_trees=require("brutal.trees")
 
 
 -- perform very simple processing of command args
@@ -74,8 +75,41 @@ elseif args.cmd=="tokens" then -- test run tokeniser
 		data=io.read("*all")
 	end
 
-	local strings=tokens.code_to_strings(data)
+	local strings=brutal_tokens.code_to_strings(data)
 	local text="{"..table.concat(strings,"} {").."}"
+
+	if args.fileout then -- output file
+		local fp=assert(io.open(args.fileout,"wb"))
+		fp:write(text)
+		fp:close()
+	else -- output console
+		print(text)
+	end
+	
+
+elseif args.cmd=="tree" then -- test run tokeniser
+
+	args.filename=args[2]
+	args.fileout=args[3]
+
+	local data
+	if args.filename then
+		local fp=assert(io.open(args.filename,"rb"))
+		data=fp:read("*all")
+		fp:close()
+	else
+		data=io.read("*all")
+	end
+
+	local strings=brutal_tokens.code_to_strings(data)
+	local text="{"..table.concat(strings,"} {").."}"
+
+	local tokens=brutal_tokens.code_to_tokens(data)
+	local tree=brutal_trees.parse(data,tokens)
+
+	tree:dump()
+
+--	local text="{"..table.concat(strings,"} {").."}"
 
 	if args.fileout then -- output file
 		local fp=assert(io.open(args.fileout,"wb"))
