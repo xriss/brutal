@@ -105,9 +105,9 @@ elseif args.cmd=="tree" then -- test run tokeniser
 	local text="{"..table.concat(strings,"} {").."}"
 
 	local tokens=brutal_tokens.code_to_tokens(data)
-	local tree=brutal_trees.parse(data,tokens)
+	local root=brutal_trees.parse(data,tokens)
 
-	tree:dump()
+	root:dump()
 
 --	local text="{"..table.concat(strings,"} {").."}"
 

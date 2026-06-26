@@ -32,36 +32,67 @@ tokens.next_token=function(code,idx)
 		-- numbers are probably doubles internally lua/js rules
 		-- 64bit or 128bit ints are a problem for later... :)
 		
+		-- I think we akso want C99 style hex floats with . and a pP exponent
+		-- and allowing _ to break up constants so huge numbers can be easier to read
+		-- this is very useful with large hex or binary constants
+		
+		-- since dot is a common operator, disallowing numbers that start with a . makes parsing more explicit
+		-- same reasoning for why hex starts with an 0x
+
 		local cc=code:sub(idx,idx+1)
 		
-		if cc=="0x" or cc=="0X" then -- hex start
+		-- decimal 
+		local digits="[0-9_]"
+		local exponent="[eE]"
+		local prefix=0
+		
+		if cc=="0x" or cc=="0X" then -- hex
 
-			local fs,fe = code:find("^[0-9a-fA-F]+",idx+2)
-			if fe then
-				return 1+fe-idx
-			end
+			prefix=2
+			digits="[0-9a-fA-F_]"
+			exponent="[pP]"
+
+		elseif cc=="0o" or cc=="0O" then -- octal
+
+			prefix=2
+			digits="[0-7_]"
+
+		elseif cc=="0z" or cc=="0Z" then -- dozenal
+
+			prefix=2
+			digits="[0-9a-bA-B_]"
+
+		elseif cc=="0b" or cc=="0B" then -- binary
 		
-		elseif cc=="0b" or cc=="0B" then -- binary start
-		
-			local fs,fe = code:find("^[01]+",idx+2)
-			if fe then
-				return 1+fe-idx
-			end
+			prefix=2
+			digits="[0-1_]"
+
+		elseif cc=="0d" or cc=="0D" then -- explicit decimal
+
+			prefix=2
 
 		end
 
 		-- we need two patterns dealing with optional digits either side of decimal point
-		-- we only allow 1 to 3 digits for exponent
 
-		-- float with e number
-		local fs,fe = code:find("^[0-9]+%.?[0-9]*[eE][%-]?[0-9][0-9]?[0-9]?",idx)	-- digits required before .
-		if fe then return 1+fe-idx end
-
-		-- decimal or float without e number 
-		local fs,fe = code:find("^[0-9]+%.?[0-9]*",idx)	-- digits required before .
-		if fe then return 1+fe-idx end
+		-- decimal or float without e number
+		local fs,fe = code:find("^"..digits.."+%.?"..digits.."*",idx+prefix)	-- digits required before .
+		if fe then
+			local ps,pe=code:find("^"..exponent.."[%-%+]?"..digits.."+",fe+1) -- check for e number
+			if pe then return 1+pe-idx end
+			return 1+fe-idx
+		end
 		
-		-- should be impossible to fall through here
+		-- decimal or float without e number
+		local fs,fe = code:find("^"..digits.."*%.?"..digits.."+",idx+prefix)	-- digits required after .
+		if fe then
+			local ps,pe=code:find("^"..exponent.."[%-%+]?"..digits.."+",fe+1) -- check for e number
+			if pe then return 1+pe-idx end
+			return 1+fe-idx
+		end
+
+		-- a prefix with no digits might get here so just return that
+		if prefix>0 then return prefix end
 
 	elseif c=="\"" or c=="'" then -- simple " or ' string with possible \ escapes
 
@@ -102,7 +133,7 @@ tokens.next_token=function(code,idx)
 
 			if code:sub(idx+2,idx+2)=="`" then -- long string comment
 				-- just skip the // and let the long string code handle the following long string
-				-- later and "//" followed by a long string can turn into a comment when parsing
+				-- later so a "//" followed by a long string can turn into a comment when parsing
 				return 2
 			end
 
