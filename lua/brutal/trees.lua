@@ -77,6 +77,19 @@ trees.nodes.new_list = function(node,parent)
 	return node
 end
 
+trees.nodes.loose_list = function(parent,symbol)
+	local node=trees.nodes.new_list()
+	node.greed="loose"
+	
+	while parent.greed do parent=parent.parent end -- go up until out of greed
+
+	if symbol then symbol:append(parent) end -- insert symbol if exists
+
+	node:append(parent) -- then new list
+
+	return node
+end
+
 -- get the last node from this parents list
 trees.nodes.peek = function(node)
 	return node.list[#node.list]
@@ -111,7 +124,7 @@ end
 trees.nodes.dump = function(node,indent)
 	if not indent then indent="" end
 	if node.is=="list" then
---		print(indent..(node.is).." "..(#node.list))
+--		print(indent..(node.is).." "..(#node.list).." "..(node.greed or ""))
 		for i,v in ipairs(node.list) do
 			v:dump(indent.." ")
 		end
@@ -191,12 +204,13 @@ trees.parse = function( code , tokens )
 	root.code=code
 	root.tokens=tokens
 
-	local parent=root
+	local parent=root:loose_list() -- start a loose list
 	for idx=1,#tokens-1 do -- step through tokens
 		local node=trees.nodes.alloc({root=root}):parse_token(idx)
 		if node.is=="open" then
 			parent=trees.nodes.new_list(nil,parent) -- push
 			node:append(parent)
+			parent=parent:loose_list() -- this *may* be a tuple so start loose
 		elseif node.is=="close" then
 			local match=parent:match_bracket(node.close)
 			if not match then -- did not find matching bracket
@@ -206,9 +220,23 @@ trees.parse = function( code , tokens )
 			node:append(parent)
 			parent=parent.parent -- pop
 		elseif node.is=="value" then
+
+			local left=parent:peek()
+			if left and ( left.is=="value" or left.is=="number" or left.is=="list" ) then
+				-- auto statement separator
+				parent=parent:loose_list()
+			end
 			node:append(parent)
+
 		elseif node.is=="number" then
+
+			local left=parent:peek()
+			if left and ( left.is=="value" or left.is=="number" or left.is=="list" ) then
+				-- auto statement separator
+				parent=parent:loose_list()
+			end
 			node:append(parent)
+
 		elseif node.is=="symbol" then
 			local greed=node:symbol_greed()
 			if greed=="tight" and parent.greed~="tight" then
@@ -229,9 +257,13 @@ trees.parse = function( code , tokens )
 
 				if parent.greed=="tight" then
 					parent=parent.parent -- pop
-				end			
-
-				node:append(parent)
+				end
+				
+				if greed=="loose" then
+					parent=parent:loose_list(node)
+				else
+					node:append(parent)
+				end
 			end
 
 		end

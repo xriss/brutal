@@ -111,6 +111,7 @@ elseif args.cmd=="tree" then -- test run tokeniser
 
 --	local text="{"..table.concat(strings,"} {").."}"
 
+--[[
 	if args.fileout then -- output file
 		local fp=assert(io.open(args.fileout,"wb"))
 		fp:write(text)
@@ -118,7 +119,7 @@ elseif args.cmd=="tree" then -- test run tokeniser
 	else -- output console
 		print(text)
 	end
-	
+]]	
 
 elseif args.cmd=="pp" then -- run pp
 
