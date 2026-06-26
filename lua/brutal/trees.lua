@@ -77,6 +77,28 @@ trees.nodes.new_list = function(node,parent)
 	return node
 end
 
+trees.nodes.tight_list = function(parent,symbol)
+	local node=trees.nodes.new_list()
+	node.greed="tight"
+	
+	local left
+	if symbol then
+		left=parent:pop() -- remove left most value first
+	end
+
+	node:append(parent) -- insert new list
+
+	if left then -- a missing value might be an error but do not complain here
+		left:append(node)
+	end
+
+	if symbol then -- insert symbol if exists
+		symbol:append(node)
+	end
+
+	return node
+end
+
 trees.nodes.loose_list = function(parent,symbol)
 	local node=trees.nodes.new_list()
 	node.greed="loose"
@@ -124,10 +146,12 @@ end
 trees.nodes.dump = function(node,indent)
 	if not indent then indent="" end
 	if node.is=="list" then
+		print(indent..( node.greed and "{" or "(" ) )
 --		print(indent..(node.is).." "..(#node.list).." "..(node.greed or ""))
 		for i,v in ipairs(node.list) do
 			v:dump(indent.." ")
 		end
+		print(indent..( node.greed and "}" or ")" ) )
 	else
 		print(indent..(node.is).." "..(node.text or ""))
 	end
@@ -208,10 +232,13 @@ trees.parse = function( code , tokens )
 	for idx=1,#tokens-1 do -- step through tokens
 		local node=trees.nodes.alloc({root=root}):parse_token(idx)
 		if node.is=="open" then
+
 			parent=trees.nodes.new_list(nil,parent) -- push
 			node:append(parent)
 			parent=parent:loose_list() -- this *may* be a tuple so start loose
+
 		elseif node.is=="close" then
+
 			local match=parent:match_bracket(node.close)
 			if not match then -- did not find matching bracket
 				return parent:bug("(brackets)",node)
@@ -219,6 +246,7 @@ trees.parse = function( code , tokens )
 			parent=match
 			node:append(parent)
 			parent=parent.parent -- pop
+
 		elseif node.is=="value" then
 
 			local left=parent:peek()
@@ -238,16 +266,11 @@ trees.parse = function( code , tokens )
 			node:append(parent)
 
 		elseif node.is=="symbol" then
+
 			local greed=node:symbol_greed()
 			if greed=="tight" and parent.greed~="tight" then
 
-				local left=parent:pop()
-				parent=trees.nodes.new_list(nil,parent) -- push new tight list
-				parent.greed="tight"
-				if left then -- might be an error but do not complain here
-					left:append(parent)
-				end
-				node:append(parent)
+				parent=parent:tight_list(node)
 
 			elseif greed=="tight" then -- continue in tight parent
 
@@ -264,6 +287,7 @@ trees.parse = function( code , tokens )
 				else
 					node:append(parent)
 				end
+				
 			end
 
 		end
