@@ -1,6 +1,6 @@
 --[[
 
-First we must break a string into a table of brutal tokens
+then we group tokens with mild operator precedence
 
 ]]
 
@@ -15,7 +15,12 @@ local operators_list={
 		"->",
 	},
 	-- loose operators grab everything to the left/right *except* other loose operators
+	-- and inferred statement breaks, double values infers a ; between then
+	-- so ( 0 0 a b 0 ) infers ; like so ( 0 ; 0 ; a ; b ; 0 )
+	-- acting like high level token groups to help make statements and tuples
 	loose={
+		-- statements
+		";",
 		-- tuples
 		",",
 		-- assignment
@@ -72,7 +77,7 @@ trees.nodes.new_list = function(node,parent)
 	node.is="list"
 	node.list={}
 	if parent then
-		trees.nodes.append(node,parent)
+		trees.nodes.append(parent,node)
 	end
 	return node
 end
@@ -86,14 +91,14 @@ trees.nodes.tight_list = function(parent,symbol)
 		left=parent:pop() -- remove left most value first
 	end
 
-	node:append(parent) -- insert new list
+	parent:append(node) -- insert new list
 
 	if left then -- a missing value might be an error but do not complain here
-		left:append(node)
+		node:append(left)
 	end
 
 	if symbol then -- insert symbol if exists
-		symbol:append(node)
+		node:append(symbol)
 	end
 
 	return node
@@ -105,9 +110,9 @@ trees.nodes.loose_list = function(parent,symbol)
 	
 	while parent.greed do parent=parent.parent end -- go up until out of greed
 
-	if symbol then symbol:append(parent) end -- insert symbol if exists
+	if symbol then parent:append(symbol) end -- insert symbol if exists
 
-	node:append(parent) -- then new list
+	parent:append(node) -- then new list
 
 	return node
 end
@@ -124,7 +129,7 @@ trees.nodes.pop = function(node)
 	return left
 end
 
-trees.nodes.append = function(node,parent)
+trees.nodes.append = function(parent,node)
 	node.parent=parent
 	if parent then -- link child in array part of parent list node
 		assert(parent.is=="list")
@@ -151,7 +156,7 @@ trees.nodes.dump = function(node,indent)
 		for i,v in ipairs(node.list) do
 			v:dump(indent.." ")
 		end
-		print(indent..( node.greed and "}" or ")" ) )
+--		print(indent..( node.greed and "}" or ")" ) )
 	else
 		print(indent..(node.is).." "..(node.text or ""))
 	end
@@ -234,7 +239,7 @@ trees.parse = function( code , tokens )
 		if node.is=="open" then
 
 			parent=trees.nodes.new_list(nil,parent) -- push
-			node:append(parent)
+			parent:append(node)
 			parent=parent:loose_list() -- this *may* be a tuple so start loose
 
 		elseif node.is=="close" then
@@ -244,7 +249,7 @@ trees.parse = function( code , tokens )
 				return parent:bug("(brackets)",node)
 			end
 			parent=match
-			node:append(parent)
+			parent:append(node)
 			parent=parent.parent -- pop
 
 		elseif node.is=="value" then
@@ -254,7 +259,7 @@ trees.parse = function( code , tokens )
 				-- auto statement separator
 				parent=parent:loose_list()
 			end
-			node:append(parent)
+			parent:append(node)
 
 		elseif node.is=="number" then
 
@@ -263,7 +268,7 @@ trees.parse = function( code , tokens )
 				-- auto statement separator
 				parent=parent:loose_list()
 			end
-			node:append(parent)
+			parent:append(node)
 
 		elseif node.is=="symbol" then
 
@@ -274,7 +279,7 @@ trees.parse = function( code , tokens )
 
 			elseif greed=="tight" then -- continue in tight parent
 
-				node:append(parent)
+			parent:append(node)
 
 			else -- not tight so pop if parent is tight
 
@@ -285,7 +290,7 @@ trees.parse = function( code , tokens )
 				if greed=="loose" then
 					parent=parent:loose_list(node)
 				else
-					node:append(parent)
+					parent:append(node)
 				end
 				
 			end
